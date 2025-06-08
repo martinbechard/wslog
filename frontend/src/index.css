@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: system-ui, sans-serif;
+  }
+  
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+@layer components {
+  .log-entry {
+    @apply border-l-4 bg-white p-3 mb-2 rounded-r shadow-sm;
+  }
+  
+  .log-entry.level-info {
+    @apply border-l-blue-500;
+  }
+  
+  .log-entry.level-warn {
+    @apply border-l-yellow-500 bg-yellow-50;
+  }
+  
+  .log-entry.level-error {
+    @apply border-l-red-500 bg-red-50;
+  }
+  
+  .log-entry.level-debug {
+    @apply border-l-gray-500;
+  }
+  
+  .trace-entry {
+    @apply font-mono text-sm;
+  }
+  
+  .trace-entry.type-entry {
+    @apply text-green-700;
+  }
+  
+  .trace-entry.type-exit {
+    @apply text-blue-700;
+  }
+  
+  .trace-entry.type-error {
+    @apply text-red-700;
+  }
+  
+  .nesting-indicator {
+    @apply inline-block w-4 border-l border-gray-300 mr-1;
+  }
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Animation for new entries */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+/* Pulse animation for connection status */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

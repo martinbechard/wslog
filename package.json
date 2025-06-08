@@ -1,0 +1,28 @@
+{
+  "name": "wslog",
+  "version": "1.0.0",
+  "description": "Advanced WebSocket logging system with hierarchical tracing",
+  "main": "index.js",
+  "scripts": {
+    "install-deps": "pnpm install -w && cd server && pnpm install && cd ../client && pnpm install && cd ../frontend && pnpm install && cd ..",
+    "build": "pnpm -r build",
+    "kill-ports": "node scripts/kill-ports.js",
+    "cleanup": "chmod +x scripts/cleanup-ports.sh && ./scripts/cleanup-ports.sh",
+    "cleanup-win": "scripts\\cleanup-ports.bat",
+    "check-ports": "echo '🔍 Checking WSLog ports:' && echo 'Port 3000 (Frontend):' && (lsof -i :3000 || echo 'Clear') && echo 'Port 8085 (Server):' && (lsof -i :8085 || echo 'Clear')",
+    "clean": "node scripts/kill-ports.js",
+    "dev:server": "cd server && pnpm dev",
+    "dev:frontend": "cd frontend && pnpm dev", 
+    "dev": "concurrently \"cd server && pnpm dev\" \"cd frontend && pnpm dev\"",
+    "fresh-start": "pnpm clean && sleep 2 && pnpm dev",
+    "client": "cd client && pnpm start",
+    "start:server": "cd server && pnpm start",
+    "start:frontend": "cd frontend && pnpm preview"
+  },
+  "keywords": ["websocket", "logging", "tracing", "hierarchical", "typescript", "react"],
+  "author": "Martin Bechard",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
