@@ -1,0 +1,73 @@
+name: Publish Packages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish'
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://npm.pkg.github.com'
+          
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Build packages
+        run: |
+          pnpm -r build
+          
+      - name: Update package names for publishing
+        run: |
+          # Update shared package for publishing
+          node -e "
+            const pkg = require('./shared/package.json');
+            pkg.name = '@martinbechard/wslog-shared';
+            require('fs').writeFileSync('./shared/package.json', JSON.stringify(pkg, null, 2));
+          "
+          
+          # Update client package for publishing
+          node -e "
+            const pkg = require('./client/package.json');
+            pkg.name = '@martinbechard/wslog-client';
+            pkg.dependencies['@wslog/shared'] = undefined;
+            pkg.dependencies['@martinbechard/wslog-shared'] = '^1.0.0';
+            require('fs').writeFileSync('./client/package.json', JSON.stringify(pkg, null, 2));
+          "
+          
+      - name: Update imports for publishing
+        run: |
+          # Update client imports to use scoped names
+          find client/dist -name "*.js" -type f -exec sed -i 's/@wslog\/shared/@martinbechard\/wslog-shared/g' {} \;
+          find client/dist -name "*.d.ts" -type f -exec sed -i 's/@wslog\/shared/@martinbechard\/wslog-shared/g' {} \;
+          
+      - name: Publish shared package
+        run: |
+          cd shared
+          pnpm publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Publish client package
+        run: |
+          cd client
+          pnpm publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,7 +4,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   LoggerConfig,
-  ExtendedLoggerConfig,
   ClientMessage,
   ServerMessage,
   LogMessage,
@@ -19,6 +18,15 @@ import {
   deepCopy,
   stringify
 } from '@wslog/shared';
+
+// Extended config to include file/console logging options
+export interface ExtendedLoggerConfig extends LoggerConfig {
+  serverless?: boolean;
+  logToFile?: boolean;
+  logToConsole?: boolean;
+  logFilePath?: string;
+  clearLogFileOnStart?: boolean;
+}
 
 export class WSLogClient extends EventEmitter {
   private ws: WebSocket | null = null;
@@ -123,7 +131,7 @@ export class WSLogClient extends EventEmitter {
         this.scheduleReconnect();
       });
 
-      this.ws.on('error', (error: any) => {
+      this.ws.on('error', (error) => {
         console.error('WebSocket error:', error);
         this.emit('error', error);
       });
@@ -258,8 +266,8 @@ export class WSLogClient extends EventEmitter {
           functionStack: [],
           source: this.config.source,
           filters: {
-            regexInclude: this.config.regexInclude.map((pattern: string) => new RegExp(pattern)),
-            regexExclude: this.config.regexExclude.map((pattern: string) => new RegExp(pattern)),
+            regexInclude: this.config.regexInclude.map(pattern => new RegExp(pattern)),
+            regexExclude: this.config.regexExclude.map(pattern => new RegExp(pattern)),
           },
         };
       }
@@ -284,8 +292,8 @@ export class WSLogClient extends EventEmitter {
       functionStack: [],
       source: this.config.source,
       filters: {
-        regexInclude: this.config.regexInclude.map((pattern: string) => new RegExp(pattern)),
-        regexExclude: this.config.regexExclude.map((pattern: string) => new RegExp(pattern)),
+        regexInclude: this.config.regexInclude.map(pattern => new RegExp(pattern)),
+        regexExclude: this.config.regexExclude.map(pattern => new RegExp(pattern)),
       },
     };
     return this.currentContext;
@@ -297,7 +305,7 @@ export class WSLogClient extends EventEmitter {
 
     // Check include patterns first
     if (ctx.filters?.regexInclude && ctx.filters.regexInclude.length > 0) {
-      const included = ctx.filters.regexInclude.some((regex: RegExp) => regex.test(message));
+      const included = ctx.filters.regexInclude.some(regex => regex.test(message));
       if (included) {
         // Message matches include pattern - include it regardless of exclude patterns
         return true;
@@ -309,7 +317,7 @@ export class WSLogClient extends EventEmitter {
 
     // No include patterns exist, check exclude patterns
     if (ctx.filters?.regexExclude && ctx.filters.regexExclude.length > 0) {
-      const excluded = ctx.filters.regexExclude.some((regex: RegExp) => regex.test(message));
+      const excluded = ctx.filters.regexExclude.some(regex => regex.test(message));
       if (excluded) return false;
     }
 
@@ -360,7 +368,7 @@ export class WSLogClient extends EventEmitter {
     
     return {
       nestingLevel: ctx.nestingLevel,
-      functionStack: ctx.functionStack.map((f: any) => f.functionName),
+      functionStack: ctx.functionStack.map(f => f.functionName),
       threadId: ctx.threadId,
     };
   }
@@ -635,8 +643,8 @@ export class WSLogClient extends EventEmitter {
     // Update regex filters
     if (config.regexInclude !== undefined || config.regexExclude !== undefined) {
       const newFilters = {
-        regexInclude: this.config.regexInclude.map((pattern: string) => new RegExp(pattern)),
-        regexExclude: this.config.regexExclude.map((pattern: string) => new RegExp(pattern)),
+        regexInclude: this.config.regexInclude.map(pattern => new RegExp(pattern)),
+        regexExclude: this.config.regexExclude.map(pattern => new RegExp(pattern)),
       };
       
       // Update filters in all contexts

@@ -66,6 +66,15 @@ export interface LoggerConfig {
   errorStackTraceDepth?: number;
 }
 
+// Extended config to include file/console logging options
+export interface ExtendedLoggerConfig extends LoggerConfig {
+  serverless?: boolean;
+  logToFile?: boolean;
+  logToConsole?: boolean;
+  logFilePath?: string;
+  clearLogFileOnStart?: boolean;
+}
+
 export interface ServerConfig {
   port?: number;
   maxConnections?: number;

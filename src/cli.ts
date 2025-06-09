@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import * as os from 'os';
 import * as readline from 'readline';
 import { WSLogClient } from './WSLogClient';
-import { LogLevel, ExtendedLoggerConfig } from '@wslog/shared';
+import { LogLevel } from '@wslog/shared';
 
 interface CLIOptions {
   url?: string;
@@ -112,7 +112,7 @@ class WSLogCLI {
 
   private async initializeClient(options: CLIOptions): Promise<void> {
     const globalOpts = this.program.opts();
-    const config: ExtendedLoggerConfig = {
+    const config = {
       serverUrl: options.url || globalOpts.url,
       source: options.source || globalOpts.source,
       enableTracing: options.trace || globalOpts.trace || options.interactive, // Enable tracing in interactive mode

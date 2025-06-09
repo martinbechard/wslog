@@ -4,9 +4,18 @@
   "description": "Shared utilities for wslog",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/martinbechard/wslog.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "pack": "npm pack",
+    "dev-install": "npm pack && cp *.tgz ../../cibc-driver/"
   },
   "dependencies": {},
   "devDependencies": {
