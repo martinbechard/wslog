@@ -27,49 +27,7 @@ jobs:
         with:
           version: 8
           
-      - name: Transform package configurations for publishing
-        run: |
-          # Transform shared package name
-          node -e "
-            const pkg = require('./shared/package.json');
-            pkg.name = '@martinbechard/wslog-shared';
-            require('fs').writeFileSync('./shared/package.json', JSON.stringify(pkg, null, 2));
-          "
-          
-          # Transform client package and dependencies
-          node -e "
-            const pkg = require('./client/package.json');
-            pkg.name = '@martinbechard/wslog-client';
-            delete pkg.dependencies['@wslog/shared'];
-            pkg.dependencies['@martinbechard/wslog-shared'] = '^1.0.0';
-            require('fs').writeFileSync('./client/package.json', JSON.stringify(pkg, null, 2));
-          "
-          
-          # Update frontend dependencies if they exist
-          node -e "
-            try {
-              const pkg = require('./frontend/package.json');
-              if (pkg.dependencies && pkg.dependencies['@wslog/shared']) {
-                delete pkg.dependencies['@wslog/shared'];
-                pkg.dependencies['@martinbechard/wslog-shared'] = '^1.0.0';
-                require('fs').writeFileSync('./frontend/package.json', JSON.stringify(pkg, null, 2));
-              }
-            } catch (e) { console.log('Frontend package.json not found or no shared dependency'); }
-          "
-          
-          # Update server dependencies if they exist
-          node -e "
-            try {
-              const pkg = require('./server/package.json');
-              if (pkg.dependencies && pkg.dependencies['@wslog/shared']) {
-                delete pkg.dependencies['@wslog/shared'];
-                pkg.dependencies['@martinbechard/wslog-shared'] = '^1.0.0';
-                require('fs').writeFileSync('./server/package.json', JSON.stringify(pkg, null, 2));
-              }
-            } catch (e) { console.log('Server package.json not found or no shared dependency'); }
-          "
-          
-      - name: Install dependencies with transformed packages
+      - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
         
       - name: Build packages
@@ -77,12 +35,10 @@ jobs:
           cd shared && pnpm build && cd ..
           cd client && pnpm build && cd ..
           
-      - name: Update compiled imports
+      - name: Transform packages for publishing
         run: |
-          find client/dist -name "*.js" -type f -exec sed -i "s/'@wslog\/shared'/'@martinbechard\/wslog-shared'/g" {} \; 2>/dev/null || true
-          find client/dist -name "*.d.ts" -type f -exec sed -i "s/'@wslog\/shared'/'@martinbechard\/wslog-shared'/g" {} \; 2>/dev/null || true
-          find client/dist -name "*.js" -type f -exec sed -i 's/"@wslog\/shared"/"@martinbechard\/wslog-shared"/g' {} \; 2>/dev/null || true
-          find client/dist -name "*.d.ts" -type f -exec sed -i 's/"@wslog\/shared"/"@martinbechard\/wslog-shared"/g' {} \; 2>/dev/null || true
+          chmod +x scripts/transform-for-publishing.sh
+          ./scripts/transform-for-publishing.sh
           
       - name: Publish shared package
         run: |

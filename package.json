@@ -5,7 +5,7 @@
     "prepare-upload": "chmod +x scripts/*.sh && ./scripts/prepare-upload.sh",
     "build": "cd shared && pnpm build && cd ../client && pnpm build && cd ..",
     "build:all": "pnpm -r run build",
-    "build:clean": "pnpm run clean && pnpm run build", 
+    "build:clean": "pnpm run clean && pnpm run build",
     "test": "cd client && pnpm test && cd ..",
     "test:coverage": "cd client && pnpm run test:coverage && cd ..",
     "clean": "cd shared && pnpm run clean && cd ../client && pnpm run clean && cd ..",
@@ -13,7 +13,7 @@
     "dev": "pnpm -r --parallel run dev",
     "lint": "pnpm -r run lint",
     "typecheck": "cd shared && pnpm run typecheck && cd ../client && pnpm run typecheck && cd ..",
-    "publish:packages": "./scripts/publish-packages.sh",
+    "publish:patch": "./scripts/publish-packages.sh patch && git push origin main --tags",
     "deps:update": "pnpm -r update",
     "deps:install": "pnpm install"
   },
