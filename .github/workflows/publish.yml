@@ -2,11 +2,11 @@ name: Publish Packages
 
 on:
   push:
-    tags: ['v*']
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to publish'
+        description: "Tag to publish"
         required: true
 
 jobs:
@@ -17,24 +17,16 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          registry-url: 'https://npm.pkg.github.com'
-          
+          node-version: "18"
+          registry-url: "https://npm.pkg.github.com"
+
       - uses: pnpm/action-setup@v4
         with:
           version: 8
-          
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-        
-      - name: Build packages
-        run: |
-          cd shared && pnpm build && cd ..
-          cd client && pnpm build && cd ..
-          
+
       - name: Update package configurations for publishing
         run: |
           # Transform shared package
@@ -43,7 +35,7 @@ jobs:
             pkg.name = '@martinbechard/wslog-shared';
             require('fs').writeFileSync('./shared/package.json', JSON.stringify(pkg, null, 2));
           "
-          
+
           # Transform client package and dependencies
           node -e "
             const pkg = require('./client/package.json');
@@ -52,7 +44,15 @@ jobs:
             pkg.dependencies['@martinbechard/wslog-shared'] = '^1.0.0';
             require('fs').writeFileSync('./client/package.json', JSON.stringify(pkg, null, 2));
           "
-          
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build packages
+        run: |
+          cd shared && pnpm build && cd ..
+          cd client && pnpm build && cd ..
+
       - name: Update compiled imports
         run: |
           # Replace imports in compiled JavaScript and TypeScript definitions
@@ -60,14 +60,14 @@ jobs:
           find client/dist -name "*.d.ts" -type f -exec sed -i "s/'@wslog\/shared'/'@martinbechard\/wslog-shared'/g" {} \;
           find client/dist -name "*.js" -type f -exec sed -i 's/"@wslog\/shared"/"@martinbechard\/wslog-shared"/g' {} \;
           find client/dist -name "*.d.ts" -type f -exec sed -i 's/"@wslog\/shared"/"@martinbechard\/wslog-shared"/g' {} \;
-          
+
       - name: Publish shared package
         run: |
           cd shared
           pnpm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Publish client package
         run: |
           cd client
