@@ -2,11 +2,11 @@ name: Publish Packages
 
 on:
   push:
-    tags: ["v*"]
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to publish"
+        description: 'Tag to publish'
         required: true
 
 jobs:
@@ -17,25 +17,25 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-
+      
       - uses: actions/setup-node@v4
         with:
-          node-version: "18"
-          registry-url: "https://npm.pkg.github.com"
-
+          node-version: '18'
+          registry-url: 'https://npm.pkg.github.com'
+          
       - uses: pnpm/action-setup@v4
         with:
           version: 8
-
-      - name: Update package configurations for publishing
+          
+      - name: Transform package configurations for publishing
         run: |
-          # Transform shared package
+          # Transform shared package name
           node -e "
             const pkg = require('./shared/package.json');
             pkg.name = '@martinbechard/wslog-shared';
             require('fs').writeFileSync('./shared/package.json', JSON.stringify(pkg, null, 2));
           "
-
+          
           # Transform client package and dependencies
           node -e "
             const pkg = require('./client/package.json');
@@ -44,30 +44,53 @@ jobs:
             pkg.dependencies['@martinbechard/wslog-shared'] = '^1.0.0';
             require('fs').writeFileSync('./client/package.json', JSON.stringify(pkg, null, 2));
           "
-
-      - name: Install dependencies
+          
+          # Update frontend dependencies if they exist
+          node -e "
+            try {
+              const pkg = require('./frontend/package.json');
+              if (pkg.dependencies && pkg.dependencies['@wslog/shared']) {
+                delete pkg.dependencies['@wslog/shared'];
+                pkg.dependencies['@martinbechard/wslog-shared'] = '^1.0.0';
+                require('fs').writeFileSync('./frontend/package.json', JSON.stringify(pkg, null, 2));
+              }
+            } catch (e) { console.log('Frontend package.json not found or no shared dependency'); }
+          "
+          
+          # Update server dependencies if they exist
+          node -e "
+            try {
+              const pkg = require('./server/package.json');
+              if (pkg.dependencies && pkg.dependencies['@wslog/shared']) {
+                delete pkg.dependencies['@wslog/shared'];
+                pkg.dependencies['@martinbechard/wslog-shared'] = '^1.0.0';
+                require('fs').writeFileSync('./server/package.json', JSON.stringify(pkg, null, 2));
+              }
+            } catch (e) { console.log('Server package.json not found or no shared dependency'); }
+          "
+          
+      - name: Install dependencies with transformed packages
         run: pnpm install --no-frozen-lockfile
-
+        
       - name: Build packages
         run: |
           cd shared && pnpm build && cd ..
           cd client && pnpm build && cd ..
-
+          
       - name: Update compiled imports
         run: |
-          # Replace imports in compiled JavaScript and TypeScript definitions
-          find client/dist -name "*.js" -type f -exec sed -i "s/'@wslog\/shared'/'@martinbechard\/wslog-shared'/g" {} \;
-          find client/dist -name "*.d.ts" -type f -exec sed -i "s/'@wslog\/shared'/'@martinbechard\/wslog-shared'/g" {} \;
-          find client/dist -name "*.js" -type f -exec sed -i 's/"@wslog\/shared"/"@martinbechard\/wslog-shared"/g' {} \;
-          find client/dist -name "*.d.ts" -type f -exec sed -i 's/"@wslog\/shared"/"@martinbechard\/wslog-shared"/g' {} \;
-
+          find client/dist -name "*.js" -type f -exec sed -i "s/'@wslog\/shared'/'@martinbechard\/wslog-shared'/g" {} \; 2>/dev/null || true
+          find client/dist -name "*.d.ts" -type f -exec sed -i "s/'@wslog\/shared'/'@martinbechard\/wslog-shared'/g" {} \; 2>/dev/null || true
+          find client/dist -name "*.js" -type f -exec sed -i 's/"@wslog\/shared"/"@martinbechard\/wslog-shared"/g' {} \; 2>/dev/null || true
+          find client/dist -name "*.d.ts" -type f -exec sed -i 's/"@wslog\/shared"/"@martinbechard\/wslog-shared"/g' {} \; 2>/dev/null || true
+          
       - name: Publish shared package
         run: |
           cd shared
           pnpm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+          
       - name: Publish client package
         run: |
           cd client
