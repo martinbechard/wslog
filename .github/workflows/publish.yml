@@ -32,31 +32,34 @@ jobs:
         
       - name: Build packages
         run: |
-          pnpm -r build
+          cd shared && pnpm build && cd ..
+          cd client && pnpm build && cd ..
           
-      - name: Update package names for publishing
+      - name: Update package configurations for publishing
         run: |
-          # Update shared package for publishing
+          # Transform shared package
           node -e "
             const pkg = require('./shared/package.json');
             pkg.name = '@martinbechard/wslog-shared';
             require('fs').writeFileSync('./shared/package.json', JSON.stringify(pkg, null, 2));
           "
           
-          # Update client package for publishing
+          # Transform client package and dependencies
           node -e "
             const pkg = require('./client/package.json');
             pkg.name = '@martinbechard/wslog-client';
-            pkg.dependencies['@wslog/shared'] = undefined;
+            delete pkg.dependencies['@wslog/shared'];
             pkg.dependencies['@martinbechard/wslog-shared'] = '^1.0.0';
             require('fs').writeFileSync('./client/package.json', JSON.stringify(pkg, null, 2));
           "
           
-      - name: Update imports for publishing
+      - name: Update compiled imports
         run: |
-          # Update client imports to use scoped names
-          find client/dist -name "*.js" -type f -exec sed -i 's/@wslog\/shared/@martinbechard\/wslog-shared/g' {} \;
-          find client/dist -name "*.d.ts" -type f -exec sed -i 's/@wslog\/shared/@martinbechard\/wslog-shared/g' {} \;
+          # Replace imports in compiled JavaScript and TypeScript definitions
+          find client/dist -name "*.js" -type f -exec sed -i "s/'@wslog\/shared'/'@martinbechard\/wslog-shared'/g" {} \;
+          find client/dist -name "*.d.ts" -type f -exec sed -i "s/'@wslog\/shared'/'@martinbechard\/wslog-shared'/g" {} \;
+          find client/dist -name "*.js" -type f -exec sed -i 's/"@wslog\/shared"/"@martinbechard\/wslog-shared"/g' {} \;
+          find client/dist -name "*.d.ts" -type f -exec sed -i 's/"@wslog\/shared"/"@martinbechard\/wslog-shared"/g' {} \;
           
       - name: Publish shared package
         run: |
