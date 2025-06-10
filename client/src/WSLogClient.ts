@@ -171,9 +171,7 @@ export class WSLogClient extends EventEmitter {
     if (!this.config.serverless) {
       this.connect();
     }
-  }
-
-  private initializeFileLogging(): void {
+  }  private initializeFileLogging(): void {
     if (!this.config.logFilePath || !fs || !path) return;
     
     // Ensure directory exists
@@ -204,6 +202,43 @@ export class WSLogClient extends EventEmitter {
     
     return 'wslog-client';
   }  public connect(): void {
+    try {
+      this.ws = new this.WebSocketClass(this.config.serverUrl);
+
+      this.ws.onopen = () => {
+        console.log(`Connected to WSLog server at ${this.config.serverUrl}`);
+        this.reconnectAttempts = 0;
+        this.emit('connected');
+        this.flushMessageQueue();
+      };
+
+      this.ws.onmessage = (event: any) => {
+        try {
+          const data = event.data || event;
+          const message: ServerMessage = JSON.parse(data.toString());
+          this.handleServerMessage(message);
+        } catch (error) {
+          console.error('Error parsing server message:', error);
+        }
+      };
+
+      this.ws.onclose = () => {
+        console.log('Disconnected from WSLog server');
+        this.ws = null;
+        this.emit('disconnected');
+        this.scheduleReconnect();
+      };
+
+      this.ws.onerror = (error: any) => {
+        console.error('WebSocket error:', error);
+        this.emit('error', error);
+      };
+
+    } catch (error) {
+      console.error('Failed to connect to WSLog server:', error);
+      this.scheduleReconnect();
+    }
+  }
 
   private handleServerMessage(message: ServerMessage): void {
     switch (message.type) {
