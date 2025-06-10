@@ -1,0 +1,41 @@
+{
+  "port": 8085,
+  "maxConnections": 1000,
+  "heartbeatInterval": 30000,
+  "logRetention": 10000,
+  "enableCompression": true,
+  "routes": [
+    {
+      "route": "/",
+      "output": "./wslog-requests.jsonl",
+      "capture": "full",
+      "format": "jsonl"
+    },
+    {
+      "route": "/tracer",
+      "output": "console",
+      "capture": "bodyOnly",
+      "format": "text"
+    },
+    {
+      "route": "/trace",
+      "output": "./trace.log",
+      "capture": "full",
+      "format": "text"
+    },
+    {
+      "route": "/logs",
+      "output": "./logs.jsonl",
+      "capture": "payloadOnly",
+      "format": "jsonl"
+    },
+    {
+      "route": "/settings",
+      "output": "./.wslog-settings.json",
+      "capture": "bodyOnly",
+      "format": "json",
+      "allowWriteFile": true,
+      "allowReadFile": true
+    }
+  ]
+}

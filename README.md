@@ -42,6 +42,7 @@ wslog/
 │   ├── src/
 │   │   ├── WSLogServer.ts       # Main server implementation
 │   │   └── index.ts             # CLI entry point
+│   ├── wslog-server.config.json # Server configuration
 │   └── package.json
 ├── client/             # TypeScript logging client
 │   ├── src/
@@ -55,7 +56,7 @@ wslog/
 │   │   ├── App.tsx              # Main application
 │   │   └── main.tsx
 │   └── package.json
-├── wslog-server.config.json     # Server configuration
+├── wslog-server.config.json     # Default server configuration
 ├── pnpm-workspace.yaml          # Workspace configuration
 └── package.json                 # Root package
 ```
@@ -75,19 +76,43 @@ wslog/
 
 2. **Build all packages:**
    ```bash
-   pnpm build
+   pnpm run build:all
    ```
 
 3. **Start the server:**
    ```bash
-   pnpm dev:server
+   pnpm run dev:server
+   ```
+   
+   Or for production:
+   ```bash
+   pnpm run start:server
    ```
 
 4. **Start the frontend (new terminal):**
    ```bash
-   pnpm dev:frontend
+   pnpm run dev:frontend
    # Access at: http://localhost:3000
    ```
+
+5. **Test the client CLI:**
+   ```bash
+   pnpm run client info "Hello from WSLog!"
+   pnpm run client --help
+   ```
+
+### Development Scripts
+
+| Command | Description |
+|---------|-------------|
+| `pnpm run dev:server` | Start the server in development mode with watch |
+| `pnpm run dev:frontend` | Start the React frontend development server |
+| `pnpm run dev:client` | Start the CLI in development mode |
+| `pnpm run start:server` | Start the server in production mode |
+| `pnpm run build:all` | Build all packages |
+| `pnpm run clean:all` | Clean all build artifacts |
+| `pnpm test` | Run tests |
+| `pnpm run client <command>` | Use the logging CLI |
 
 ## 📋 Usage Examples
 
@@ -95,13 +120,19 @@ wslog/
 
 ```bash
 # Send different log levels
-pnpm client info "Application started successfully"
-pnpm client warn "Memory usage at 85%" --source "monitoring"
-pnpm client error "Database connection failed" --source "db-pool"
-pnpm client debug "Processing user request #12345"
+pnpm run client info "Application started successfully"
+pnpm run client warn "Memory usage at 85%" --source "monitoring"
+pnpm run client error "Database connection failed" --source "db-pool"
+pnpm run client debug "Processing user request #12345"
 
 # Interactive mode
-pnpm client interactive
+pnpm run client interactive
+
+# Monitor logs from server
+pnpm run client monitor
+
+# Check server connectivity
+pnpm run client ping
 ```
 
 ### Advanced Tracing
@@ -133,6 +164,40 @@ try {
 
 ## 🎛️ Configuration
 
+### Server Configuration
+
+The server looks for `wslog-server.config.json` in the server directory. You can create a default configuration:
+
+```bash
+cd server
+node dist/index.js --create-config
+```
+
+Example configuration:
+```json
+{
+  "port": 8085,
+  "maxConnections": 1000,
+  "heartbeatInterval": 30000,
+  "logRetention": 10000,
+  "enableCompression": true,
+  "routes": [
+    {
+      "route": "/logs",
+      "output": "./logs.jsonl",
+      "capture": "payloadOnly",
+      "format": "jsonl"
+    },
+    {
+      "route": "/tracer",
+      "output": "console",
+      "capture": "bodyOnly", 
+      "format": "text"
+    }
+  ]
+}
+```
+
 ### Client Configuration
 
 ```javascript
@@ -154,11 +219,16 @@ const client = new WSLogClient({
 - **Statistics panel** with charts and metrics
 - **Advanced filtering** with regex support
 
+Access the frontend at: `http://localhost:3000`
+
 ## 🚀 Production Deployment
 
 ### Server
 ```bash
-pnpm build
+pnpm run build:all
+pnpm run start:server
+
+# Or with custom config:
 cd server
 node dist/index.js --config /path/to/config.json
 ```
@@ -166,9 +236,26 @@ node dist/index.js --config /path/to/config.json
 ### Frontend
 ```bash
 cd frontend
-pnpm build
-pnpm preview
+pnpm run build
+pnpm run preview
 ```
+
+## 🔧 Troubleshooting
+
+### Server Won't Start
+- Check if port 8085 is already in use: `lsof -i :8085`
+- Verify the config file exists: `server/wslog-server.config.json`
+- Check server logs for specific error messages
+
+### Client Connection Issues
+- Ensure the server is running on the expected port
+- Check WebSocket URL in client configuration
+- Verify firewall settings allow WebSocket connections
+
+### Build Issues
+- Clean and rebuild: `pnpm run clean:all && pnpm run build:all`
+- Check Node.js version compatibility (requires Node.js 18+)
+- Ensure all dependencies are installed: `pnpm install`
 
 ## 📚 API Reference
 

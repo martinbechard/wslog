@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WSLog Browser Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: #0056b3;
+        }
+        .button.success {
+            background: #28a745;
+        }
+        .button.warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        .button.danger {
+            background: #dc3545;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .log-output {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 WSLog Browser Demo</h1>
+        <p>This demo shows the browser-compatible WSLogClient in action. The client automatically detects the browser environment and uses the native WebSocket API instead of the Node.js 'ws' library.</p>
+        
+        <div class="controls">
+            <div class="input-group">
+                <label>WebSocket Server URL:</label>
+                <input type="text" id="serverUrl" value="ws://localhost:8085" placeholder="ws://localhost:8085">
+            </div>
+            
+            <div class="input-group">
+                <label>Source Identifier:</label>
+                <input type="text" id="source" value="browser-demo" placeholder="browser-demo">
+            </div>
+            
+            <button class="button" onclick="connect()">🔌 Connect</button>
+            <button class="button" onclick="disconnect()">❌ Disconnect</button>
+            <button class="button" onclick="enableTracing()">🔍 Enable Tracing</button>
+        </div>
+        
+        <div id="status" class="status disconnected">
+            Status: Disconnected
+        </div>
+        
+        <div class="controls">
+            <h3>Send Log Messages</h3>
+            <input type="text" id="logMessage" placeholder="Enter log message..." style="width: 70%;">
+            <button class="button success" onclick="sendLog('info')">ℹ️ Info</button>
+            <button class="button warning" onclick="sendLog('warn')">⚠️ Warn</button>
+            <button class="button danger" onclick="sendLog('error')">❌ Error</button>
+        </div>
+        
+        <div class="controls">
+            <h3>Function Tracing</h3>
+            <input type="text" id="functionName" placeholder="Function name..." style="width: 45%; margin-right: 10px;">
+            <input type="text" id="functionArgs" placeholder="Args (JSON array)..." style="width: 35%; margin-right: 10px;">
+            <button class="button" onclick="traceEntry()">📥 Entry</button>
+            <button class="button" onclick="traceExit()">📤 Exit</button>
+            <button class="button" onclick="resetTrace()">🔄 Reset</button>
+        </div>
+        
+        <div class="controls">
+            <h3>Advanced</h3>
+            <button class="button" onclick="ping()">🏓 Ping Server</button>
+            <button class="button" onclick="showTraceInfo()">📊 Trace Info</button>
+            <button class="button" onclick="showQueueInfo()">📋 Queue Info</button>
+            <button class="button" onclick="clearQueue()">🗑️ Clear Queue</button>
+            <button class="button" onclick="clearLog()">🧹 Clear Log</button>
+        </div>
+        
+        <h3>Output Log</h3>
+        <div id="output" class="log-output">
+            Ready to connect...<br>
+        </div>
+    </div>
+
+    <script>
+        // Browser-compatible WSLogClient implementation with fixes
+        class WSLogClient {
+            constructor(config = {}) {
+                this.config = {
+                    serverUrl: config.serverUrl || 'ws://localhost:8085',
+                    source: config.source || 'browser-client',
+                    enableTracing: config.enableTracing || false,
+                    logToConsole: true,
+                    ...config
+                };
+                
+                this.ws = null;
+                this.messageQueue = [];
+                this.context = {
+                    threadId: 1,
+                    nestingLevel: 0,
+                    functionStack: []
+                };
+                this.listeners = {};
+                this.isConnecting = false; // Prevent multiple connections
+            }
+            
+            // Simple event emitter
+            on(event, callback) {
+                if (!this.listeners[event]) this.listeners[event] = [];
+                this.listeners[event].push(callback);
+            }
+            
+            emit(event, ...args) {
+                if (this.listeners[event]) {
+                    this.listeners[event].forEach(callback => callback(...args));
+                }
+            }
+            
+            connect() {
+                if (this.isConnecting || this.isConnected()) {
+                    appendOutput('❌ Already connected or connecting');
+                    return;
+                }
+                
+                this.isConnecting = true;
+                
+                try {
+                    // Clean up any existing connection
+                    this.cleanupConnection();
+                    
+                    this.ws = new WebSocket(this.config.serverUrl);
+                    
+                    this.ws.onopen = () => {
+                        this.isConnecting = false;
+                        appendOutput('✅ Connected to WSLog server at ' + this.config.serverUrl);
+                        this.emit('connected');
+                        this.flushMessageQueue();
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        try {
+                            const message = JSON.parse(event.data);
+                            this.handleServerMessage(message);
+                        } catch (error) {
+                            appendOutput('❌ Error parsing server message: ' + error);
+                        }
+                    };
+                    
+                    this.ws.onclose = () => {
+                        this.isConnecting = false;
+                        appendOutput('🔌 Disconnected from WSLog server');
+                        this.ws = null;
+                        this.emit('disconnected');
+                    };
+                    
+                    this.ws.onerror = (error) => {
+                        this.isConnecting = false;
+                        appendOutput('❌ WebSocket error: ' + error);
+                        this.emit('error', error);
+                    };
+                    
+                } catch (error) {
+                    this.isConnecting = false;
+                    appendOutput('❌ Failed to connect: ' + error);
+                }
+            }
+            
+            cleanupConnection() {
+                if (this.ws) {
+                    this.ws.onopen = null;
+                    this.ws.onmessage = null;
+                    this.ws.onclose = null;
+                    this.ws.onerror = null;
+                    if (this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.close();
+                    }
+                }
+            }
+            
+            disconnect() {
+                this.cleanupConnection();
+                this.ws = null;
+                this.isConnecting = false;
+            }
+            
+            isConnected() {
+                return this.ws && this.ws.readyState === WebSocket.OPEN;
+            }
+            
+            sendMessage(message) {
+                if (this.isConnected()) {
+                    try {
+                        this.ws.send(JSON.stringify(message));
+                        appendOutput(`📤 Sent: ${message.type} - ${message.data.message || message.data.functionName || 'ping'}`);
+                    } catch (error) {
+                        appendOutput('❌ Send error: ' + error);
+                        this.messageQueue.push(message);
+                    }
+                } else {
+                    this.messageQueue.push(message);
+                    appendOutput(`📋 Queued: ${message.type} - ${message.data.message || message.data.functionName || 'ping'}`);
+                }
+            }
+            
+            flushMessageQueue() {
+                if (this.messageQueue.length === 0) return;
+                
+                appendOutput(`📤 Flushing ${this.messageQueue.length} queued messages...`);
+                const queueCopy = [...this.messageQueue];
+                this.messageQueue = []; // Clear queue first to prevent infinite loops
+                
+                queueCopy.forEach(message => {
+                    if (this.isConnected()) {
+                        try {
+                            this.ws.send(JSON.stringify(message));
+                            appendOutput(`📤 Flushed: ${message.type} - ${message.data.message || message.data.functionName || 'ping'}`);
+                        } catch (error) {
+                            appendOutput('❌ Flush error: ' + error);
+                            this.messageQueue.push(message); // Re-queue on error
+                        }
+                    } else {
+                        this.messageQueue.push(message); // Re-queue if disconnected
+                    }
+                });
+            }
+            
+            handleServerMessage(message) {
+                switch (message.type) {
+                    case 'pong':
+                        appendOutput('🏓 Pong received from server');
+                        break;
+                    default:
+                        appendOutput('📨 Server message: ' + JSON.stringify(message));
+                }
+            }
+            
+            log(message, level = 'info', data = null) {
+                const logMessage = {
+                    type: 'log',
+                    id: Date.now().toString() + Math.random(), // Unique ID
+                    data: {
+                        level: level,
+                        message: message,
+                        source: this.config.source,
+                        timestamp: new Date().toISOString(),
+                        nestingLevel: this.context.nestingLevel,
+                        threadId: this.context.threadId,
+                        data: data
+                    },
+                    route: '/logs'
+                };
+                
+                this.sendMessage(logMessage);
+                
+                if (this.config.logToConsole) {
+                    const prefix = '|'.repeat(this.context.nestingLevel);
+                    console.log(`[${level.toUpperCase()}] ${prefix}${message}`);
+                }
+            }
+            
+            traceEntry(functionName, args = null) {
+                if (!this.config.enableTracing) {
+                    appendOutput('❌ Tracing is disabled. Click "Enable Tracing" first.');
+                    return;
+                }
+                
+                this.context.nestingLevel++;
+                this.context.functionStack.push({
+                    functionName: functionName,
+                    startTime: Date.now()
+                });
+                
+                const argsStr = args ? ` ${JSON.stringify(args)}` : '';
+                const message = `>>> Call ${functionName}${argsStr}`;
+                
+                const traceMessage = {
+                    type: 'trace',
+                    id: Date.now().toString() + Math.random(),
+                    data: {
+                        type: 'entry',
+                        level: 'debug',
+                        message: message,
+                        functionName: functionName,
+                        source: this.config.source,
+                        timestamp: new Date().toISOString(),
+                        nestingLevel: this.context.nestingLevel,
+                        threadId: this.context.threadId
+                    },
+                    route: '/trace'
+                };
+                
+                this.sendMessage(traceMessage);
+                
+                if (this.config.logToConsole) {
+                    const prefix = '|'.repeat(this.context.nestingLevel);
+                    console.log(`[TRACE] ${prefix}${message}`);
+                }
+            }
+            
+            traceExit(functionName, returnValue = null) {
+                if (!this.config.enableTracing) {
+                    appendOutput('❌ Tracing is disabled. Click "Enable Tracing" first.');
+                    return;
+                }
+                
+                const functionCall = this.context.functionStack.pop();
+                const executionTime = functionCall ? Date.now() - functionCall.startTime : 0;
+                
+                let message = `<<< Exit ${functionName}`;
+                if (returnValue !== null) {
+                    message += ` ${JSON.stringify(returnValue)}`;
+                }
+                
+                const traceMessage = {
+                    type: 'trace',
+                    id: Date.now().toString() + Math.random(),
+                    data: {
+                        type: 'exit',
+                        level: 'debug',
+                        message: message,
+                        functionName: functionName,
+                        source: this.config.source,
+                        timestamp: new Date().toISOString(),
+                        nestingLevel: this.context.nestingLevel,
+                        threadId: this.context.threadId,
+                        executionTime: executionTime,
+                        returnValue: returnValue
+                    },
+                    route: '/trace'
+                };
+                
+                this.sendMessage(traceMessage);
+                
+                if (this.config.logToConsole) {
+                    const prefix = '|'.repeat(this.context.nestingLevel);
+                    console.log(`[TRACE] ${prefix}${message}`);
+                }
+                
+                this.context.nestingLevel = Math.max(0, this.context.nestingLevel - 1);
+            }
+            
+            resetTraceContext() {
+                this.context = {
+                    threadId: this.context.threadId,
+                    nestingLevel: 0,
+                    functionStack: []
+                };
+                appendOutput('🔄 Trace context reset');
+            }
+            
+            ping() {
+                const pingMessage = {
+                    type: 'ping',
+                    id: Date.now().toString() + Math.random()
+                };
+                this.sendMessage(pingMessage);
+            }
+            
+            getTraceInfo() {
+                return {
+                    threadId: this.context.threadId,
+                    nestingLevel: this.context.nestingLevel,
+                    functionStack: this.context.functionStack.map(f => f.functionName)
+                };
+            }
+        }
+        
+        // Global variables
+        let client = null;
+        let messageCounter = 0;
+        let lastPingTime = 0;
+        let lastTraceTime = 0;
+        
+        // UI Functions
+        function appendOutput(message) {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            messageCounter++;
+            output.innerHTML += `[${timestamp}] #${messageCounter} ${message}<br>`;
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        function updateStatus(connected) {
+            const status = document.getElementById('status');
+            if (connected) {
+                status.className = 'status connected';
+                status.textContent = 'Status: Connected ✅';
+            } else {
+                status.className = 'status disconnected';
+                status.textContent = 'Status: Disconnected ❌';
+            }
+        }
+        
+        function connect() {
+            const serverUrl = document.getElementById('serverUrl').value.trim();
+            const source = document.getElementById('source').value.trim();
+            
+            if (!serverUrl) {
+                appendOutput('❌ Please enter a server URL');
+                return;
+            }
+            
+            // Clean up existing client
+            if (client) {
+                client.disconnect();
+            }
+            
+            client = new WSLogClient({
+                serverUrl: serverUrl,
+                source: source || 'browser-demo',
+                enableTracing: false,
+                logToConsole: true
+            });
+            
+            client.on('connected', () => {
+                updateStatus(true);
+                appendOutput('✅ Connected to server');
+            });
+            
+            client.on('disconnected', () => {
+                updateStatus(false);
+                appendOutput('❌ Disconnected from server');
+            });
+            
+            client.on('error', (error) => {
+                updateStatus(false);
+                appendOutput('❌ Connection error: ' + error);
+            });
+            
+            client.connect();
+            appendOutput('🔌 Attempting to connect...');
+        }
+        
+        function disconnect() {
+            if (client) {
+                client.disconnect();
+                updateStatus(false);
+                appendOutput('🔌 Disconnected manually');
+            }
+        }
+        
+        function enableTracing() {
+            if (client) {
+                client.config.enableTracing = true;
+                appendOutput('🔍 Tracing enabled');
+            } else {
+                appendOutput('❌ Please connect first');
+            }
+        }
+        
+        function sendLog(level) {
+            const messageInput = document.getElementById('logMessage');
+            const message = messageInput.value.trim();
+            
+            if (!message) {
+                appendOutput('❌ Please enter a message');
+                return;
+            }
+            
+            if (!client) {
+                appendOutput('❌ Please connect first');
+                return;
+            }
+            
+            client.log(message, level);
+            messageInput.value = '';
+            messageInput.focus();
+        }
+        
+        function traceEntry() {
+            const now = Date.now();
+            if (now - lastTraceTime < 100) { // Throttle
+                return;
+            }
+            lastTraceTime = now;
+            
+            const functionName = document.getElementById('functionName').value.trim();
+            const argsText = document.getElementById('functionArgs').value.trim();
+            
+            if (!functionName) {
+                appendOutput('❌ Please enter a function name');
+                return;
+            }
+            
+            if (!client) {
+                appendOutput('❌ Please connect first');
+                return;
+            }
+            
+            let args = null;
+            if (argsText) {
+                try {
+                    args = JSON.parse(argsText);
+                } catch (e) {
+                    appendOutput('❌ Invalid JSON in args: ' + e.message);
+                    return;
+                }
+            }
+            
+            client.traceEntry(functionName, args);
+        }
+        
+        function traceExit() {
+            const now = Date.now();
+            if (now - lastTraceTime < 100) { // Throttle
+                return;
+            }
+            lastTraceTime = now;
+            
+            const functionName = document.getElementById('functionName').value.trim();
+            
+            if (!functionName) {
+                appendOutput('❌ Please enter a function name');
+                return;
+            }
+            
+            if (!client) {
+                appendOutput('❌ Please connect first');
+                return;
+            }
+            
+            client.traceExit(functionName);
+        }
+        
+        function resetTrace() {
+            if (client) {
+                client.resetTraceContext();
+            } else {
+                appendOutput('❌ Please connect first');
+            }
+        }
+        
+        function ping() {
+            const now = Date.now();
+            if (now - lastPingTime < 1000) { // Throttle pings
+                appendOutput('⏳ Please wait before sending another ping');
+                return;
+            }
+            lastPingTime = now;
+            
+            if (client) {
+                client.ping();
+            } else {
+                appendOutput('❌ Please connect first');
+            }
+        }
+        
+        function showTraceInfo() {
+            if (client) {
+                const info = client.getTraceInfo();
+                appendOutput(`📊 Thread: ${info.threadId}, Level: ${info.nestingLevel}, Stack: [${info.functionStack.join(', ')}]`);
+            } else {
+                appendOutput('❌ Please connect first');
+            }
+        }
+        
+        function showQueueInfo() {
+            if (client) {
+                const queueLength = client.messageQueue.length;
+                appendOutput(`📋 Message queue: ${queueLength} messages pending`);
+                if (queueLength > 0) {
+                    const sample = client.messageQueue.slice(0, 3).map(m => m.type).join(', ');
+                    appendOutput(`📋 Queue sample: ${sample}${queueLength > 3 ? '...' : ''}`);
+                }
+            } else {
+                appendOutput('❌ Please connect first');
+            }
+        }
+        
+        function clearQueue() {
+            if (client) {
+                const cleared = client.messageQueue.length;
+                client.messageQueue = [];
+                appendOutput(`🗑️ Cleared ${cleared} messages from queue`);
+            } else {
+                appendOutput('❌ Please connect first');
+            }
+        }
+        
+        function clearLog() {
+            document.getElementById('output').innerHTML = 'Log cleared...<br>';
+            messageCounter = 0;
+        }
+        
+        // Handle Enter key in input fields
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('logMessage').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendLog('info');
+                }
+            });
+            
+            document.getElementById('functionName').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    traceEntry();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

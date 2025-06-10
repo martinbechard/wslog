@@ -1,7 +1,104 @@
-import WebSocket from 'ws';
-import { EventEmitter } from 'events';
-import * as fs from 'fs';
-import * as path from 'path';
+// Type declarations for cross-environment compatibility
+declare const window: any;
+declare const global: any;
+
+// Environment detection and WebSocket implementation
+function getWebSocketImplementation(): any {
+  // Check if we're in a browser environment
+  if (typeof window !== 'undefined' && typeof window.WebSocket !== 'undefined') {
+    return window.WebSocket;
+  }
+  
+  // Check if we're in a Node.js environment with WebSocket available globally
+  if (typeof global !== 'undefined' && global.WebSocket) {
+    return global.WebSocket;
+  }
+  
+  // Try to import ws for Node.js environment
+  try {
+    const ws = require('ws');
+    return ws.default || ws;
+  } catch (error) {
+    throw new Error('WebSocket is not available. In Node.js, please install the "ws" package. In browsers, WebSocket should be available natively.');
+  }
+}
+
+// Environment-specific imports and polyfills
+let fs: any = null;
+let path: any = null;
+let EventEmitter: any = null;
+
+try {
+  // Try to import Node.js modules
+  fs = require('fs');
+  path = require('path');
+  EventEmitter = require('events').EventEmitter;
+} catch (error) {
+  // In browser environment, provide minimal polyfills
+  if (typeof window !== 'undefined') {
+    // Browser EventEmitter polyfill
+    class BrowserEventEmitter {
+      private listeners: { [key: string]: Function[] } = {};
+
+      on(event: string, listener: Function): this {
+        if (!this.listeners[event]) {
+          this.listeners[event] = [];
+        }
+        this.listeners[event].push(listener);
+        return this;
+      }
+
+      emit(event: string, ...args: any[]): boolean {
+        if (!this.listeners[event]) return false;
+        this.listeners[event].forEach(listener => {
+          try {
+            listener(...args);
+          } catch (error) {
+            console.error('EventEmitter error:', error);
+          }
+        });
+        return true;
+      }
+
+      removeListener(event: string, listener: Function): this {
+        if (!this.listeners[event]) return this;
+        const index = this.listeners[event].indexOf(listener);
+        if (index > -1) {
+          this.listeners[event].splice(index, 1);
+        }
+        return this;
+      }
+
+      removeAllListeners(event?: string): this {
+        if (event) {
+          delete this.listeners[event];
+        } else {
+          this.listeners = {};
+        }
+        return this;
+      }
+    }
+
+    EventEmitter = BrowserEventEmitter;
+
+    // Browser fs polyfill (no-op functions for file operations)
+    fs = {
+      existsSync: () => false,
+      mkdirSync: () => {},
+      writeFileSync: () => {},
+      appendFileSync: () => {}
+    };
+
+    // Browser path polyfill
+    path = {
+      dirname: (filePath: string) => {
+        const parts = filePath.split('/');
+        return parts.slice(0, -1).join('/') || '.';
+      }
+    };
+  }
+}
+
 import {
   LoggerConfig,
   ExtendedLoggerConfig,
@@ -21,14 +118,15 @@ import {
 } from '@wslog/shared';
 
 export class WSLogClient extends EventEmitter {
-  private ws: WebSocket | null = null;
+  private ws: any = null;
   private config: Required<ExtendedLoggerConfig>;
   private reconnectAttempts = 0;
   private messageQueue: ClientMessage[] = [];
-  private batchTimeout: NodeJS.Timeout | null = null;
+  private batchTimeout: any = null;
   private context: IContextVariable<TraceContext>;
   private threadIdCounter = 1;
-  private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectTimer: any = null;
+  private WebSocketClass: any;
   
   // Persistent context for interactive mode
   private persistentContext: TraceContext | null = null;
@@ -39,6 +137,9 @@ export class WSLogClient extends EventEmitter {
 
   constructor(config: ExtendedLoggerConfig = {}) {
     super();
+    
+    // Get the appropriate WebSocket implementation
+    this.WebSocketClass = getWebSocketImplementation();
     
     this.config = {
       serverUrl: config.serverUrl || 'ws://localhost:8085',
@@ -61,8 +162,8 @@ export class WSLogClient extends EventEmitter {
 
     this.context = createContext<TraceContext>();
     
-    // Initialize file logging if needed
-    if (this.config.logToFile) {
+    // Initialize file logging if needed (only in Node.js)
+    if (this.config.logToFile && fs) {
       this.initializeFileLogging();
     }
     
@@ -73,7 +174,7 @@ export class WSLogClient extends EventEmitter {
   }
 
   private initializeFileLogging(): void {
-    if (!this.config.logFilePath) return;
+    if (!this.config.logFilePath || !fs || !path) return;
     
     // Ensure directory exists
     const dir = path.dirname(this.config.logFilePath);
@@ -85,54 +186,24 @@ export class WSLogClient extends EventEmitter {
     if (this.config.clearLogFileOnStart) {
       fs.writeFileSync(this.config.logFilePath, '');
     }
-  }
-
-  private getDefaultSource(): string {
+  }  private getDefaultSource(): string {
     try {
-      const os = require('os');
-      return `${os.hostname()}-wslog`;
+      // Try Node.js hostname first
+      if (typeof require !== 'undefined') {
+        const os = require('os');
+        return `${os.hostname()}-wslog`;
+      }
     } catch {
-      return 'wslog-client';
+      // Fallback for browser environment
     }
-  }
-
-  private connect(): void {
-    try {
-      this.ws = new WebSocket(this.config.serverUrl);
-
-      this.ws.on('open', () => {
-        console.log(`Connected to WSLog server at ${this.config.serverUrl}`);
-        this.reconnectAttempts = 0;
-        this.emit('connected');
-        this.flushMessageQueue();
-      });
-
-      this.ws.on('message', (data: Buffer) => {
-        try {
-          const message: ServerMessage = JSON.parse(data.toString());
-          this.handleServerMessage(message);
-        } catch (error) {
-          console.error('Error parsing server message:', error);
-        }
-      });
-
-      this.ws.on('close', () => {
-        console.log('Disconnected from WSLog server');
-        this.ws = null;
-        this.emit('disconnected');
-        this.scheduleReconnect();
-      });
-
-      this.ws.on('error', (error: any) => {
-        console.error('WebSocket error:', error);
-        this.emit('error', error);
-      });
-
-    } catch (error) {
-      console.error('Failed to connect to WSLog server:', error);
-      this.scheduleReconnect();
+    
+    // Browser fallback
+    if (typeof window !== 'undefined') {
+      return `${(window as any).location?.hostname || 'browser'}-wslog`;
     }
-  }
+    
+    return 'wslog-client';
+  }  public connect(): void {
 
   private handleServerMessage(message: ServerMessage): void {
     switch (message.type) {
@@ -193,7 +264,7 @@ export class WSLogClient extends EventEmitter {
   }
 
   private writeToFile(message: string): void {
-    if (this.config.logToFile && this.config.logFilePath) {
+    if (this.config.logToFile && this.config.logFilePath && fs) {
       fs.appendFileSync(this.config.logFilePath, message);
     }
   }
@@ -203,6 +274,18 @@ export class WSLogClient extends EventEmitter {
       // Remove trailing newline for console output and add [TRACE] prefix
       console.debug(`[TRACE] ${message.trimEnd()}`);
     }
+  }
+
+  private getWebSocketState(): number {
+    if (!this.ws) return 3; // CLOSED
+    
+    // Handle both Node.js ws and browser WebSocket APIs
+    if (typeof this.ws.readyState !== 'undefined') {
+      return this.ws.readyState;
+    }
+    
+    // Fallback
+    return 3; // CLOSED
   }
 
   private sendMessage(message: ClientMessage): void {
@@ -225,7 +308,7 @@ export class WSLogClient extends EventEmitter {
     }
     
     // Send to WebSocket if connected and not in serverless mode
-    if (!this.config.serverless && this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (!this.config.serverless && this.ws && this.getWebSocketState() === 1) { // 1 = OPEN
       try {
         this.ws.send(JSON.stringify(message));
       } catch (error) {
@@ -626,7 +709,7 @@ export class WSLogClient extends EventEmitter {
   }
 
   public isConnected(): boolean {
-    return !this.config.serverless && this.ws?.readyState === WebSocket.OPEN;
+    return !this.config.serverless && this.getWebSocketState() === 1; // 1 = OPEN
   }
 
   public updateConfig(config: Partial<ExtendedLoggerConfig>): void {
@@ -662,7 +745,7 @@ export class WSLogClient extends EventEmitter {
    * Clear the log file (for compatibility with old tracer)
    */
   public clearLogFile(): void {
-    if (this.config.logToFile && this.config.logFilePath) {
+    if (this.config.logToFile && this.config.logFilePath && fs) {
       fs.writeFileSync(this.config.logFilePath, '');
     }
   }

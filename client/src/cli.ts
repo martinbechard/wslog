@@ -138,7 +138,7 @@ class WSLogCLI {
         resolve();
       });
 
-      this.client.once('error', (error) => {
+      this.client.once('error', (error: any) => {
         clearTimeout(timeout);
         reject(error);
       });
@@ -150,7 +150,7 @@ class WSLogCLI {
       console.log('✅ Pong received');
     });
 
-    this.client.on('serverError', (error) => {
+    this.client.on('serverError', (error: any) => {
       console.log(`❌ Server error: ${error}`);
     });
 
@@ -292,7 +292,7 @@ class WSLogCLI {
 
         this.handleInteractiveCommand(trimmed)
           .then(() => rl.prompt())
-          .catch((error) => {
+          .catch((error: any) => {
             console.error('❌ Command failed:', error);
             rl.prompt();
           });
@@ -425,7 +425,7 @@ class WSLogCLI {
       this.client.subscribe('/logs', filters);
       this.client.subscribe('/trace', filters);
 
-      this.client.on('message', (message) => {
+      this.client.on('message', (message: any) => {
         if (message.type === 'log' || message.type === 'trace') {
           const data = message.data;
           const timestamp = new Date(data.timestamp).toLocaleTimeString();
@@ -484,7 +484,7 @@ class WSLogCLI {
 // Main execution
 if (require.main === module) {
   const cli = new WSLogCLI();
-  cli.run().catch((error) => {
+  cli.run().catch((error: any) => {
     console.error('CLI Error:', error);
     process.exit(1);
   });
