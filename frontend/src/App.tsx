@@ -19,7 +19,8 @@ const STORAGE_KEYS = {
   showFunctionCalls: 'wslog-show-function-calls',
   selectedThreads: 'wslog-selected-threads',
   displayThreadId: 'wslog-display-thread-id',
-  isPaused: 'wslog-is-paused'
+  isPaused: 'wslog-is-paused',
+  autoScroll: 'wslog-auto-scroll'
 };
 
 // Clean up old localStorage keys that are no longer used
@@ -102,6 +103,9 @@ function App() {
     cleanupOldSettings();
   }, []);
 
+  // Message limit configuration
+  const MESSAGE_LIMIT = 1000; // Maximum number of messages to keep in memory
+
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [traces, setTraces] = useState<TraceEntry[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionState>('connecting');
@@ -129,9 +133,39 @@ function App() {
   const [isPaused, setIsPaused] = useState(() => 
     loadFromStorage(STORAGE_KEYS.isPaused, false)
   );
+  const [autoScroll, setAutoScroll] = useState(() => 
+    loadFromStorage(STORAGE_KEYS.autoScroll, true)
+  );
   
   const wsRef = useRef<WebSocket | null>(null);
   const pendingMessagesRef = useRef<{logs: LogMessage[], traces: TraceEntry[]}>({logs: [], traces: []});
+  const messageAreaRef = useRef<HTMLDivElement>(null);
+
+  // Helper function to limit array size and keep only the most recent messages
+  const limitMessages = <T,>(messages: T[], newMessage: T, limit: number): T[] => {
+    const updatedMessages = [...messages, newMessage];
+    if (updatedMessages.length > limit) {
+      return updatedMessages.slice(-limit); // Keep only the last 'limit' messages
+    }
+    return updatedMessages;
+  };
+
+  // Helper function to limit pending messages
+  const limitPendingMessages = (pending: {logs: LogMessage[], traces: TraceEntry[]}, limit: number) => {
+    if (pending.logs.length > limit) {
+      pending.logs = pending.logs.slice(-limit);
+    }
+    if (pending.traces.length > limit) {
+      pending.traces = pending.traces.slice(-limit);
+    }
+  };
+
+  // Auto-scroll to bottom when new messages arrive
+  const scrollToBottom = () => {
+    if (messageAreaRef.current && autoScroll) {
+      messageAreaRef.current.scrollTop = messageAreaRef.current.scrollHeight;
+    }
+  };
 
   // Simplified filter settings (removed threadId and logType)
   const [filterSettings, setFilterSettings] = useState<FilterSettings>(() => 
@@ -187,11 +221,26 @@ function App() {
     saveToStorage(STORAGE_KEYS.isPaused, isPaused);
   }, [isPaused]);
 
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.autoScroll, autoScroll);
+  }, [autoScroll]);
+
+  // Auto-scroll when new messages arrive
+  useEffect(() => {
+    scrollToBottom();
+  }, [logs, traces, autoScroll]);
+
   // Process pending messages when resumed
   useEffect(() => {
     if (!isPaused && (pendingMessagesRef.current.logs.length > 0 || pendingMessagesRef.current.traces.length > 0)) {
-      setLogs(prev => [...prev, ...pendingMessagesRef.current.logs]);
-      setTraces(prev => [...prev, ...pendingMessagesRef.current.traces]);
+      setLogs(prev => {
+        const allNewLogs = [...prev, ...pendingMessagesRef.current.logs];
+        return allNewLogs.length > MESSAGE_LIMIT ? allNewLogs.slice(-MESSAGE_LIMIT) : allNewLogs;
+      });
+      setTraces(prev => {
+        const allNewTraces = [...prev, ...pendingMessagesRef.current.traces];
+        return allNewTraces.length > MESSAGE_LIMIT ? allNewTraces.slice(-MESSAGE_LIMIT) : allNewTraces;
+      });
       pendingMessagesRef.current = {logs: [], traces: []};
     }
   }, [isPaused]);
@@ -230,15 +279,19 @@ function App() {
           const logMessage = serverMessage.data as LogMessage;
           if (isPaused) {
             pendingMessagesRef.current.logs.push(logMessage);
+            // Limit pending messages to prevent memory issues
+            limitPendingMessages(pendingMessagesRef.current, MESSAGE_LIMIT);
           } else {
-            setLogs(prev => [...prev, logMessage]);
+            setLogs(prev => limitMessages(prev, logMessage, MESSAGE_LIMIT));
           }
         } else if (serverMessage.type === 'trace') {
           const traceEntry = serverMessage.data as TraceEntry;
           if (isPaused) {
             pendingMessagesRef.current.traces.push(traceEntry);
+            // Limit pending messages to prevent memory issues
+            limitPendingMessages(pendingMessagesRef.current, MESSAGE_LIMIT);
           } else {
-            setTraces(prev => [...prev, traceEntry]);
+            setTraces(prev => limitMessages(prev, traceEntry, MESSAGE_LIMIT));
           }
         } else if (serverMessage.type === 'status') {
           console.log('Server status:', serverMessage.status);
@@ -428,22 +481,30 @@ function App() {
     setIsPaused(!isPaused);
   };
 
+  const toggleAutoScroll = () => {
+    setAutoScroll(!autoScroll);
+    // If enabling auto-scroll, immediately scroll to bottom
+    if (!autoScroll) {
+      setTimeout(scrollToBottom, 100);
+    }
+  };
+
   const getPendingCount = () => {
     return pendingMessagesRef.current.logs.length + pendingMessagesRef.current.traces.length;
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="h-screen bg-gray-50 flex">
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="bg-white shadow-sm border-b">
+        <header className="bg-white shadow-sm border-b flex-shrink-0">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">WSLog Dashboard</h1>
                 <p className="text-sm text-gray-600 mt-1">
-                  Real-time logging and trace visualization
+                  Real-time logging and trace visualization (max {MESSAGE_LIMIT} messages)
                 </p>
               </div>
               
@@ -480,6 +541,21 @@ function App() {
 
                 {/* Control Buttons */}
                 <div className="flex items-center space-x-2">
+                  <button
+                    onClick={toggleAutoScroll}
+                    className={`flex items-center space-x-1 px-3 py-2 text-sm rounded transition-colors ${
+                      autoScroll 
+                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                        : 'bg-gray-600 text-white hover:bg-gray-700'
+                    }`}
+                    title={autoScroll ? 'Auto-scroll enabled - click to disable' : 'Auto-scroll disabled - click to enable'}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    <span>{autoScroll ? 'Auto' : 'Manual'}</span>
+                  </button>
+
                   <button
                     onClick={togglePause}
                     className={`flex items-center space-x-1 px-3 py-2 text-sm rounded transition-colors ${
@@ -536,11 +612,12 @@ function App() {
           </div>
         </header>
 
-        {/* Main Content */}
-        <main className="flex-1 px-6 py-4 overflow-auto">
+        {/* Main Content - Takes remaining height */}
+        <main className="flex-1 min-h-0 px-6 py-4 bg-gray-50">
           {/* Messages Section */}
-          <div className="bg-white rounded-lg shadow-sm border">
-            <div className="p-4 border-b">
+          <div className="bg-white rounded-lg shadow-sm border h-full flex flex-col">
+            {/* Filter Controls Bar - Fixed */}
+            <div className="p-4 border-b flex-shrink-0">
               <div className="flex items-center justify-between">
                 {/* Left side - All button and level/func filters */}
                 <div className="flex items-center space-x-2 text-sm">
@@ -636,7 +713,11 @@ function App() {
               </div>
             </div>
             
-            <div className="p-4">
+            {/* Scrollable Message Area */}
+            <div 
+              ref={messageAreaRef}
+              className="flex-1 min-h-0 p-4 overflow-auto"
+            >
               <TraceViewer 
                 messages={filteredMessages} 
                 viewSettings={viewSettings}
@@ -650,7 +731,7 @@ function App() {
 
       {/* Sidebar with Stats - Conditionally rendered */}
       {showStats && (
-        <div className="w-80 bg-white border-l">
+        <div className="w-80 bg-white border-l flex-shrink-0">
           <StatsPanel 
             logs={logs}
             traces={traces}
